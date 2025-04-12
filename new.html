@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hierarchical TB Cases Treemap</title>
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        
+        .controls {
+            margin: 20px 0;
+        }
+
+        .breadcrumb {
+            font-family: sans-serif;
+            font-size: 14px;
+            padding: 10px;
+            background-color: #f5f5f5;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb span {
+            color: #2196F3;
+            cursor: pointer;
+            padding: 0 5px;
+        }
+        
+        .breadcrumb span:hover {
+            text-decoration: underline;
+        }
+
+        .tooltip {
+            position: absolute;
+            padding: 10px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            pointer-events: none;
+            font-size: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .cell {
+            cursor: pointer;
+        }
+
+        .cell-text {
+            font-size: 11px;
+            fill: white;
+            pointer-events: none;
+        }
+
+        .title {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        select {
+            padding: 5px;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">Hierarchical TB Cases Analysis</h1>
+    <div class="controls">
+        <select id="levelFilter">
+            <option value="all">All Levels</option>
+            <option value="region">Region Level</option>
+            <option value="country">Country Level</option>
+        </select>
+        <select id="metricFilter">
+            <option value="newinc_tb">New TB Cases</option>
+            <option value="c_notified_tb">Notified TB Cases</option>
+            <option value="c_new_014">TB Cases (0-14 years)</option>
+        </select>
+    </div>
+    <div id="visualization-container"></div>
+
+    <script>
+        let currentNode;
+        let treemap;
+        let currentMetric = 'newinc_tb';
+
+        const width = 960;
+        const height = 600;
+        const margin = { top: 40, right: 10, bottom: 10, left: 10 };
+
+        const svg = d3.select('#visualization-container')
+            .append('svg')
+            .attr('width', width)
+            .attr('height', height);
+
+        const tooltip = d3.select('body')
+            .append('div')
+            .attr('class', 'tooltip')
+            .style('opacity', 0);
+
+        const breadcrumb = d3.select('#visualization-container')
+            .append('div')
+            .attr('class', 'breadcrumb');
+
+        // Load data and create visualization
+        d3.csv('c.csv').then(function(data) {
+            // Process data
+            const latestData = d3.nest()
+                .key(d => d.country)
+                .sortValues((a, b) => d3.descending(+a.year, +b.year))
+                .entries(data)
+                .map(d => d.values[0]);
+
+            function createHierarchy(metric) {
+                const nestedData = d3.nest()
+                    .key(d => d.g_whoregion)
+                    .key(d => d.country)
+                    .rollup(leaves => ({
+                        value: +leaves[0][metric],
+                        details: leaves[0]
+                    }))
+                    .entries(latestData);
+
+                return d3.hierarchy({ 
+                    key: "World",
+                    values: nestedData
+                }, d => d.values)
+                    .sum(d => d.value ? d.value.value : 0);
+            }
+
+            // Initialize treemap
+            treemap = d3.treemap()
+                .size([width - margin.left - margin.right, height - margin.top - margin.bottom])
+                .padding(2)
+                .round(true);
+
+            // Create initial visualization
+            currentNode = createHierarchy(currentMetric);
+            updateVisualization(currentNode);
+
+            // Add filter listeners
+            d3.select('#levelFilter').on('change', function() {
+                const level = this.value;
+                updateVisualization(currentNode, level);
+            });
+
+            d3.select('#metricFilter').on('change', function() {
+                currentMetric = this.value;
+                currentNode = createHierarchy(currentMetric);
+                updateVisualization(currentNode);
+            });
+        });
+
+        function updateVisualization(root, level = 'all') {
+            // Clear previous visualization
+            svg.selectAll('*').remove();
+
+            // Apply treemap layout
+            treemap(root);
+
+            // Create color scale
+            const colorScale = d3.scaleOrdinal()
+                .domain(root.children.map(d => d.data.key))
+                .range(d3.schemeSet3);
+
+            // Filter nodes based on level
+            let nodes;
+            if (level === 'region') {
+                nodes = root.children;
+            } else if (level === 'country') {
+                nodes = root.leaves();
+            } else {
+                nodes = root.descendants().slice(1);
+            }
+
+            // Create container
+            const g = svg.append('g')
+                .attr('transform', `translate(${margin.left},${margin.top})`);
+
+            // Draw cells
+            const cell = g.selectAll('g')
+                .data(nodes)
+                .enter().append('g')
+                .attr('class', 'cell')
+                .attr('transform', d => `translate(${d.x0},${d.y0})`);
+
+            cell.append('rect')
+                .attr('width', d => Math.max(0, d.x1 - d.x0))
+                .attr('height', d => Math.max(0, d.y1 - d.y0))
+                .attr('fill', d => colorScale(d.ancestors().reverse()[1]?.data.key || d.data.key))
+                .attr('stroke', '#fff')
+                .attr('stroke-width', 1)
+                .on('click', d => zoom(d));
+
+            // Add labels
+            cell.append('text')
+                .attr('class', 'cell-text')
+                .attr('x', 4)
+                .attr('y', 14)
+                .each(function(d) {
+                    const node = d3.select(this);
+                    const width = d.x1 - d.x0;
+                    const text = d.data.key;
+                    
+                    if (width > 60) {
+                        wrapText(node, text, width);
+                    } else if (width > 30) {
+                        node.text(text);
+                    }
+                });
+
+            // Update breadcrumb
+            updateBreadcrumb(root);
+
+            // Add tooltips
+            cell.on('mouseover', showTooltip)
+                .on('mouseout', hideTooltip);
+        }
+
+        function wrapText(node, text, width) {
+            const words = text.split(' ');
+            let line = '';
+            let lineNumber = 0;
+            const lineHeight = 12;
+
+            words.forEach(word => {
+                if ((line + word).length * 6 < width) {
+                    line = line ? line + ' ' + word : word;
+                } else {
+                    node.append('tspan')
+                        .attr('x', 4)
+                        .attr('dy', lineNumber ? lineHeight : 0)
+                        .text(line);
+                    line = word;
+                    lineNumber++;
+                }
+            });
+
+            node.append('tspan')
+                .attr('x', 4)
+                .attr('dy', lineNumber ? lineHeight : 0)
+                .text(line);
+        }
+
+        function showTooltip(d) {
+            const value = d.value;
+            const metricName = d3.select('#metricFilter option:checked').text();
+            
+            tooltip.transition()
+                .duration(200)
+                .style('opacity', .9);
+            tooltip.html(`
+                ${d.data.key}<br/>
+                ${metricName}: ${d3.format(",")(value)}
+            `)
+                .style('left', (d3.event.pageX + 10) + 'px')
+                .style('top', (d3.event.pageY - 28) + 'px');
+        }
+
+        function hideTooltip() {
+            tooltip.transition()
+                .duration(500)
+                .style('opacity', 0);
+        }
+
+        function zoom(d) {
+            currentNode = d;
+            updateVisualization(d);
+        }
+
+        function updateBreadcrumb(d) {
+            const ancestors = d.ancestors().reverse();
+            breadcrumb.html('');
+            
+            ancestors.forEach((a, i) => {
+                breadcrumb.append('span')
+                    .text(a.data.key)
+                    .on('click', () => zoom(a));
+                
+                if (i < ancestors.length - 1) {
+                    breadcrumb.append('span').text(' > ');
+                }
+            });
+        }
+    </script>
+</body>
+</html>

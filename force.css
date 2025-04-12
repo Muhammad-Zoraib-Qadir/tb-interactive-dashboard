@@ -1,0 +1,26 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    overflow: hidden;
+}
+
+.link {
+    stroke-opacity: 0.8;
+}
+
+text {
+    font: 12px sans-serif;
+    pointer-events: none;
+}
+
+.tooltip {
+    position: absolute;
+    text-align: center;
+    padding: 6px;
+    font: 12px sans-serif;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    pointer-events: none;
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+}

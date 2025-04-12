@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timeline Visualization</title>
+    <link rel="stylesheet" href="timelines.css">
+</head>
+<body>
+    <div id="timeline-container">
+        <div id="controls">
+            <button id="play-pause">Play</button>
+            <input type="range" id="year-slider" min="1980" max="2020" value="1980" step="1">
+            <span id="current-year">1980</span>
+        </div>
+        <div id="tooltip" class="tooltip"></div>
+    </div>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="timelines.js"></script>
+</body>
+</html>
